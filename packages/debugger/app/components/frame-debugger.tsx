@@ -102,7 +102,12 @@ function FrameDebuggerFramePropertiesTableRow({
     // @todo frame here can be Partial if there are errors we should handle that somehow
     const flattenedFrame = getFrameFlattened(result.frame as Frame);
 
-    delete flattenedFrame["frames.js:version"]; // TODO: get correct frames.js version
+    // remove version info because it is populated by getFrameFlattened call but we want real value from result
+    delete flattenedFrame["frames.js:version"];
+
+    if (result.framesVersion) {
+      validProperties.push(["frames.js:version", result.framesVersion]);
+    }
 
     let hasExperimentalProperties = false;
 
