@@ -70,3 +70,22 @@ const handler = frames(async ({ ctx }) => {
 export const GET = handler;
 export const POST = handler;
 ```
+
+## State protection using a signature
+
+The issue with the state used without any sort of signature is that it can be tampered with by the client. To prevent this, you can use a `stateSigningSecret` option to ensure that the state has not been tampered with.
+
+```ts [frames.ts]
+import { createFrames } from "@framesjs/next";
+
+export type State = {
+  count: number;
+};
+
+export const frames = createFrames<State>({
+  initialState: {
+    count: 0,
+  },
+  stateSigningSecret: "my-secret-key", // [!code focus]
+});
+```
