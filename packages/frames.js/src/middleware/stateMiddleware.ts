@@ -1,6 +1,6 @@
-import { createHmac } from "node:crypto";
 import type { FramesContext, FramesMiddleware, JsonValue } from "../core/types";
 import { isFrameDefinition } from "../core/utils";
+import { createHMACSignature, verifyHMACSignature } from "../lib/crypto";
 
 export class InvalidStateSignatureError extends Error {}
 
@@ -27,15 +27,9 @@ function parseState<TState extends JsonValue | undefined>(
   return JSON.parse(state) as TState | SignedState<TState>;
 }
 
-function createStateSignature(state: JsonValue, secret: string): string {
-  return createHmac("sha256", secret)
-    .update(JSON.stringify(state))
-    .digest("hex");
-}
-
-function extractStateFromMessage<TState extends JsonValue | undefined>(
+async function extractStateFromMessage<TState extends JsonValue | undefined>(
   ctx: FramesContext<TState>
-): TState {
+): Promise<TState> {
   let state: TState = ctx.initialState;
 
   if (
@@ -57,12 +51,13 @@ function extractStateFromMessage<TState extends JsonValue | undefined>(
         if (isSignedState<TState>(parsedState)) {
           // if state is signed verify it with secret, otherwise treat it as valid automatically (backward compatibility)
           if (ctx.stateSigningSecret) {
-            const expectedSignature = createStateSignature(
-              parsedState.data,
+            const isValidSignature = await verifyHMACSignature(
+              JSON.stringify(parsedState.data),
+              Buffer.from(parsedState.__sig, "hex"),
               ctx.stateSigningSecret
             );
 
-            if (expectedSignature !== parsedState.__sig) {
+            if (!isValidSignature) {
               throw new InvalidStateSignatureError(
                 "State signature verification failed"
               );
@@ -96,21 +91,24 @@ function extractStateFromMessage<TState extends JsonValue | undefined>(
   return state;
 }
 
-function serializeState<TState extends JsonValue | undefined>(
+async function serializeState<TState extends JsonValue | undefined>(
   state: TState,
   ctx: FramesContext<TState>
-): string | undefined {
+): Promise<string | undefined> {
   if (state === undefined) {
     return undefined;
   }
 
   if (ctx.request.method === "POST") {
     if (ctx.stateSigningSecret) {
+      const signature = await createHMACSignature(
+        JSON.stringify(state),
+        ctx.stateSigningSecret
+      ).then((buf) => buf.toString("hex"));
+
       return JSON.stringify({
         data: state as Exclude<TState, undefined>,
-        __sig: createHmac("sha256", ctx.stateSigningSecret)
-          .update(JSON.stringify(state))
-          .digest("hex"),
+        __sig: signature,
       } satisfies SignedState<TState>);
     }
 
@@ -146,7 +144,7 @@ export function stateMiddleware<
   TState extends JsonValue | undefined,
 >(): FramesMiddleware<TState, StateMiddlewareContext<TState>> {
   return async (ctx, next) => {
-    const stateFromMessage: TState = extractStateFromMessage<TState>(ctx);
+    const stateFromMessage: TState = await extractStateFromMessage<TState>(ctx);
 
     const nextResult = await next({
       state: stateFromMessage,
@@ -156,7 +154,7 @@ export function stateMiddleware<
       // Include previous state if it is not present in the result
       return {
         ...nextResult,
-        state: serializeState(nextResult.state ?? stateFromMessage, ctx),
+        state: await serializeState(nextResult.state ?? stateFromMessage, ctx),
       };
     }
 

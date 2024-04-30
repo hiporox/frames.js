@@ -1,13 +1,7 @@
 /* eslint-disable no-console -- we expect the usage of console.log */
-import { createHmac } from "node:crypto";
 import type { FramesContext } from "../core/types";
+import { createHMACSignature } from "../lib/crypto";
 import { stateMiddleware, InvalidStateSignatureError } from "./stateMiddleware";
-
-function createSignature(state: any, secret: string): string {
-  return createHmac("sha256", secret)
-    .update(JSON.stringify(state))
-    .digest("hex");
-}
 
 describe("stateMiddleware", () => {
   let consoleWarnSpy: jest.SpyInstance;
@@ -116,23 +110,31 @@ describe("stateMiddleware", () => {
       const next = jest.fn().mockResolvedValue({ image: "/test", state });
 
       const result = await mw(ctx as unknown as FramesContext, next);
+      const signature = await createHMACSignature(
+        JSON.stringify(state),
+        "test"
+      ).then((buf) => buf.toString("hex"));
 
       expect(result).toMatchObject({
         image: "/test",
         state: JSON.stringify({
           data: state,
-          __sig: createSignature(state, "test"),
+          __sig: signature,
         }),
       });
     });
 
     it("throws an error if state signature verification failed", async () => {
       const state = { foo: "bar" };
+      const signature = await createHMACSignature(
+        JSON.stringify(state),
+        "test"
+      ).then((buf) => buf.toString("hex"));
       const ctx = {
         message: {
           state: JSON.stringify({
             data: state,
-            __sig: createSignature(state, "test2"),
+            __sig: signature,
           }),
         },
         initialState: {},
@@ -150,11 +152,15 @@ describe("stateMiddleware", () => {
 
     it("warns that state is signed and uses the state if secret is not provided", async () => {
       const state = { foo: "bar" };
+      const signature = await createHMACSignature(
+        JSON.stringify(state),
+        "test"
+      ).then((buf) => buf.toString("hex"));
       const ctx = {
         message: {
           state: JSON.stringify({
             data: state,
-            __sig: createSignature(state, "test"),
+            __sig: signature,
           }),
         },
         initialState: { initial: true },
@@ -177,11 +183,15 @@ describe("stateMiddleware", () => {
 
     it("uses signed state if the secret matches", async () => {
       const state = { foo: "bar" };
+      const signature = await createHMACSignature(
+        JSON.stringify(state),
+        "test"
+      ).then((buf) => buf.toString("hex"));
       const ctx = {
         message: {
           state: JSON.stringify({
             data: state,
-            __sig: createSignature(state, "test"),
+            __sig: signature,
           }),
         },
         initialState: { initial: true },
