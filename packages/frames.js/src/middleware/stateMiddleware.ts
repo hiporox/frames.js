@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import type { FramesContext, FramesMiddleware, JsonValue } from "../core/types";
 import { isFrameDefinition } from "../core/utils";
 
+export class InvalidStateSignatureError extends Error {}
+
 type SignedState<TState extends JsonValue | undefined> = {
   data: Exclude<TState, undefined>;
   __sig: string;
@@ -61,11 +63,9 @@ function extractStateFromMessage<TState extends JsonValue | undefined>(
             );
 
             if (expectedSignature !== parsedState.__sig) {
-              // eslint-disable-next-line no-console -- provide feedback
-              console.warn(
-                "State signature verification failed, are you sure that the state was constructed by frames.js?"
+              throw new InvalidStateSignatureError(
+                "State signature verification failed"
               );
-              state = ctx.initialState;
             } else {
               state = parsedState.data;
             }
@@ -80,6 +80,10 @@ function extractStateFromMessage<TState extends JsonValue | undefined>(
           state = parsedState;
         }
       } catch (e) {
+        if (e instanceof InvalidStateSignatureError) {
+          throw e;
+        }
+
         // eslint-disable-next-line no-console -- provide feedback
         console.warn(
           "Failed to parse state from frame message, are you sure that the state was constructed by frames.js?"
@@ -134,7 +138,7 @@ type StateMiddlewareContext<TState extends JsonValue | undefined> = {
  * This middleware handles state extraction from frame message and state serialization on response.
  *
  * If the message does not contain a state, the middleware uses `initialState` value passed to `createFrames` function.
- * If state is signed and signature is not valid, `initialState` is used.
+ * If state is signed and signature is not valid, error is thrown.
  *
  * This middleware is internal only and must run after globalMiddleware and before perRouteMiddleware. So the message is available.
  */

@@ -1,7 +1,7 @@
 /* eslint-disable no-console -- we expect the usage of console.log */
 import { createHmac } from "node:crypto";
 import type { FramesContext } from "../core/types";
-import { stateMiddleware } from "./stateMiddleware";
+import { stateMiddleware, InvalidStateSignatureError } from "./stateMiddleware";
 
 function createSignature(state: any, secret: string): string {
   return createHmac("sha256", secret)
@@ -126,7 +126,7 @@ describe("stateMiddleware", () => {
       });
     });
 
-    it("warns if state signature verification failed and uses initial state", async () => {
+    it("throws an error if state signature verification failed", async () => {
       const state = { foo: "bar" };
       const ctx = {
         message: {
@@ -135,7 +135,7 @@ describe("stateMiddleware", () => {
             __sig: createSignature(state, "test2"),
           }),
         },
-        initialState: { initial: true },
+        initialState: {},
         stateSigningSecret: "test1",
         request: new Request("http://localhost", { method: "POST" }),
       };
@@ -143,15 +143,9 @@ describe("stateMiddleware", () => {
       const mw = stateMiddleware();
       const next = jest.fn().mockResolvedValue({ image: "/test", state });
 
-      await mw(ctx as unknown as FramesContext, next);
-
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("State signature verification failed")
+      await expect(mw(ctx as unknown as FramesContext, next)).rejects.toThrow(
+        InvalidStateSignatureError
       );
-
-      expect(next).toHaveBeenCalledWith({
-        state: { initial: true },
-      });
     });
 
     it("warns that state is signed and uses the state if secret is not provided", async () => {

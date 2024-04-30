@@ -270,7 +270,7 @@ export type FramesOptions<
     : TFrameMiddleware;
   /**
    * If provided the state will be signed with this secret and validated on subsequent requests.
-   * If state does not match, it is ignored.
+   * If the signature is not valid, error is thrown.
    */
   stateSigningSecret?: string;
 };
